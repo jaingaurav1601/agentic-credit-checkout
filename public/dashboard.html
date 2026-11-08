@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lender Dashboard - Agentic Credit Checkout</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.2.0/styles/ag-grid.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.2.0/styles/ag-theme-quartz.css">
+<style>
+  body { margin:0; font:16px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; color:#0b1b2b; background:#f6f8fb; }
+  header { background:#003087; color:#fff; padding:14px 24px; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:18px; margin:0; }
+  header a { color:#cfe9ff; text-decoration:none; font-size:14px; }
+  main { max-width:1150px; margin:24px auto; padding:0 16px; }
+  .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
+  @media (max-width:860px){ .kpis { grid-template-columns:repeat(2,1fr);} }
+  .kpi { background:#fff; border:1px solid #e3e8f0; border-radius:12px; padding:14px 16px; }
+  .kpi b { display:block; font-size:22px; }
+  .kpi span { color:#6b7686; font-size:13px; }
+  section { background:#fff; border:1px solid #e3e8f0; border-radius:12px; padding:16px; margin-bottom:20px; }
+  h2 { font-size:15px; margin:0 0 10px; }
+  .grid { height:260px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Lender dashboard</h1>
+  <a href="/">&larr; Store</a>
+</header>
+<main>
+  <div class="kpis" id="kpis"></div>
+  <section><h2>Agent decision log (with rationale)</h2><div id="decisions" class="grid ag-theme-quartz"></div></section>
+  <section><h2>Receivables book (agentic credit)</h2><div id="receivables" class="grid ag-theme-quartz"></div></section>
+  <section><h2>PayPal orders</h2><div id="orders" class="grid ag-theme-quartz"></div></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.2.0/dist/ag-grid-community.min.js"></script>
+<script>
+fetch('/api/state').then(r => r.json()).then(s => {
+  const open = s.receivables.filter(r => r.status === 'open');
+  const principal = open.reduce((a, r) => a + r.principal, 0);
+  const captured = s.orders.reduce((a, o) => a + (+o.amount || 0), 0);
+  document.getElementById('kpis').innerHTML = [
+    [`$${s.creditLine.limit}`, 'credit line'],
+    [`$${(s.creditLine.used).toFixed(2)}`, 'drawn'],
+    [`$${principal.toFixed(2)}`, 'open receivables'],
+    [`$${captured.toFixed(2)}`, 'captured over PayPal'],
+  ].map(([b, l]) => `<div class="kpi"><b>${b}</b><span>${l}</span></div>`).join('');
+
+  agGrid.createGrid(document.getElementById('decisions'), {
+    rowData: [...s.decisions].reverse(),
+    columnDefs: [
+      { field: 'ts', headerName: 'Time', width: 170 },
+      { field: 'type', width: 110 },
+      { field: 'product' },
+      { field: 'amount', width: 100 },
+      { field: 'approved', width: 110 },
+      { field: 'rationale', flex: 1, wrapText: true, autoHeight: true },
+      { field: 'reasons', flex: 1, wrapText: true, autoHeight: true, valueGetter: p => (p.data.reasons || []).join('; ') },
+    ],
+    defaultColDef: { sortable: true, resizable: true },
+  });
+  agGrid.createGrid(document.getElementById('receivables'), {
+    rowData: s.receivables,
+    columnDefs: [
+      { field: 'id', width: 120 }, { field: 'ts', headerName: 'Booked', width: 170 },
+      { field: 'product' }, { field: 'principal', width: 110 },
+      { field: 'schedule', headerName: 'Instalments', flex: 1, valueGetter: p => (p.data.schedule || []).map(x => `${x.due}: $${x.amount}`).join(' | ') },
+      { field: 'status', width: 100 },
+    ],
+  });
+  agGrid.createGrid(document.getElementById('orders'), {
+    rowData: s.orders,
+    columnDefs: [
+      { field: 'id', headerName: 'Order', flex: 1 }, { field: 'ts', width: 170 },
+      { field: 'status', width: 120 }, { field: 'amount', width: 100 },
+      { field: 'currency', width: 100 }, { field: 'captureId', headerName: 'Capture', flex: 1 },
+    ],
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentic Credit Checkout</title>
+<style>
+  :root { --ink:#0b1b2b; --brand:#003087; --accent:#009cde; --ok:#0a7d3b; --bad:#b3261e; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink); background:#f6f8fb; }
+  header { background:var(--brand); color:#fff; padding:14px 24px; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:18px; margin:0; }
+  header a { color:#cfe9ff; text-decoration:none; font-size:14px; }
+  main { max-width:1100px; margin:24px auto; padding:0 16px; display:grid; grid-template-columns: 1.2fr 1fr; gap:20px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .card { background:#fff; border:1px solid #e3e8f0; border-radius:12px; padding:18px; }
+  .product { display:flex; justify-content:space-between; gap:12px; padding:14px 0; border-bottom:1px solid #eef2f7; }
+  .product:last-child { border-bottom:none; }
+  .price { font-weight:700; white-space:nowrap; }
+  #chat { display:flex; flex-direction:column; height:520px; }
+  #log { flex:1; overflow-y:auto; padding:6px 2px; }
+  .msg { margin:8px 0; padding:10px 12px; border-radius:10px; max-width:88%; white-space:pre-wrap; }
+  .me { background:#e8f1ff; margin-left:auto; }
+  .ria { background:#f0f4f8; }
+  .sys { background:#fff7e6; font-size:13px; color:#6b5300; max-width:100%; }
+  .ok { background:#e9f7ef; color:var(--ok); max-width:100%; }
+  .bad { background:#fdecea; color:var(--bad); max-width:100%; }
+  #composer { display:flex; gap:8px; margin-top:10px; }
+  #composer input { flex:1; padding:12px; border:1px solid #d3dce8; border-radius:8px; font-size:15px; }
+  #composer button { padding:12px 18px; background:var(--brand); color:#fff; border:none; border-radius:8px; font-size:15px; cursor:pointer; }
+  .ppbtn { display:inline-block; margin-top:6px; padding:10px 16px; background:#ffc439; color:#111; font-weight:700; border-radius:20px; text-decoration:none; }
+  .muted { color:#6b7686; font-size:13px; }
+  h2 { margin-top:0; font-size:16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agentic Credit Checkout</h1>
+  <a href="/dashboard.html">Lender dashboard &rarr;</a>
+</header>
+<main>
+  <section class="card">
+    <h2>Store</h2>
+    <div id="products" class="muted">loading&hellip;</div>
+    <p class="muted">Talk to Ria, the shopping agent. It can check you out over PayPal, or underwrite a micro credit line on the spot and still pay the merchant instantly over PayPal.</p>
+  </section>
+  <section class="card" id="chat">
+    <h2>Ria - shopping &amp; credit agent</h2>
+    <div id="log"></div>
+    <div id="composer">
+      <input id="in" placeholder="e.g. I want the earbuds, can I pay on credit? I earn 3000/month, no EMIs" autofocus>
+      <button id="send">Send</button>
+    </div>
+  </section>
+</main>
+<script>
+const log = document.getElementById('log');
+const history = [];
+function add(cls, html) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + cls;
+  d.innerHTML = html;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+  return d;
+}
+fetch('/api/products').then(r => r.json()).then(ps => {
+  document.getElementById('products').innerHTML = ps.map(p =>
+    `<div class="product"><div><b>${p.name}</b><br><span class="muted">${p.blurb}</span></div><div class="price">$${p.price}</div></div>`).join('');
+});
+add('ria', "Hi, I'm Ria. What are you shopping for today? I can check you out over PayPal, or underwrite a small credit line so you can pay in 3 instalments while the merchant gets paid now.");
+
+async function send() {
+  const inp = document.getElementById('in');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  add('me', text);
+  history.push({ role: 'user', content: text });
+  const thinking = add('ria', '&hellip;');
+  const r = await fetch('/api/agent', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: text, history }),
+  });
+  const j = await r.json();
+  thinking.remove();
+  if (j.error) { add('bad', 'Error: ' + j.error); return; }
+  add('ria', j.reply);
+  history.push({ role: 'assistant', content: j.reply });
+  if (j.payment) {
+    if (j.payment.declined) {
+      add('bad', 'Credit declined: ' + (j.payment.reasons || []).join('; '));
+    } else {
+      const rail = j.payment.rail === 'credit'
+        ? 'Agentic credit approved. 3 instalments scheduled. Complete the purchase over PayPal - the merchant is paid in full now:'
+        : 'PayPal order created. Approve it to pay now:';
+      const el = add('sys', rail + '<br>');
+      const a = document.createElement('a');
+      a.className = 'ppbtn'; a.target = '_blank'; a.href = j.payment.approveUrl;
+      a.textContent = 'Pay with PayPal';
+      el.appendChild(a);
+      const note = document.createElement('div');
+      note.className = 'muted';
+      note.textContent = 'After approving in the PayPal popup, come back and click "Capture order" below.';
+      el.appendChild(note);
+      const cap = document.createElement('button');
+      cap.textContent = 'Capture order'; cap.style.cssText = 'margin-left:8px;padding:10px 16px;border-radius:20px;border:1px solid #003087;background:#fff;color:#003087;font-weight:700;cursor:pointer';
+      cap.onclick = async () => {
+        cap.disabled = true;
+        const cr = await fetch('/api/capture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: j.payment.orderId }) });
+        const cj = await cr.json();
+        if (cj.error) add('bad', 'Capture failed: ' + cj.error);
+        else add('ok', `Payment captured (${cj.captureId}). Order ${j.payment.orderId} is ${cj.status}. See the lender dashboard for the book.`);
+      };
+      el.appendChild(cap);
+    }
+  }
+}
+document.getElementById('send').onclick = send;
+document.getElementById('in').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+</script>
+</body>
+</html>
