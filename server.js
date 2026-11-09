@@ -94,7 +94,7 @@ app.get('/.well-known/agent-card.json', (req, res) => {
   res.json({
     name: 'Agentic Credit Checkout - Merchant Agent',
     description: 'Merchant-side agent that lets buyer agents browse products, create PayPal orders (pay-now) and request conversational credit underwriting (pay-on-credit, 3 installments, merchant settled in full over PayPal rails).',
-    url: base,
+    url: `${base}/a2a`,
     version: '1.0.0',
     protocolVersion: '0.3.0',
     preferredTransport: 'JSONRPC',
@@ -102,9 +102,9 @@ app.get('/.well-known/agent-card.json', (req, res) => {
     defaultInputModes: ['text', 'application/json'],
     defaultOutputModes: ['application/json'],
     skills: [
-      { id: 'browse-catalog', name: 'Browse catalog', description: 'List products with prices.', examples: ['GET /api/products'] },
-      { id: 'checkout-pay-now', name: 'Pay-now checkout', description: 'Create and capture a PayPal order for the full amount via the conversational agent.', examples: ['POST /api/agent {"message": "buy the headphones, pay now"}'] },
-      { id: 'checkout-pay-on-credit', name: 'Pay-on-credit checkout', description: 'Agentic credit underwriting at checkout: the agent evaluates stated income and EMIs against an explicit credit policy, approves or declines with rationale, books a 3-month installment schedule, and settles the merchant in full over PayPal.', examples: ['POST /api/agent {"message": "buy the headphones on credit, income 60000, EMIs 5000"}'] }
+      { id: 'browse-catalog', name: 'Browse catalog', description: 'List products with prices.', examples: ['POST /a2a {"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"role":"user","parts":[{"kind":"text","text":"list products"}]}}}'] },
+      { id: 'checkout-pay-now', name: 'Pay-now checkout', description: 'Create and capture a PayPal order for the full amount via the conversational agent.', examples: ['POST /a2a {"jsonrpc":"2.0","id":2,"method":"message/send","params":{"message":{"role":"user","parts":[{"kind":"text","text":"buy the headphones, pay now"}]}}}'] },
+      { id: 'checkout-pay-on-credit', name: 'Pay-on-credit checkout', description: 'Agentic credit underwriting at checkout: the agent evaluates stated income and EMIs against an explicit credit policy, approves or declines with rationale, books a 3-month installment schedule, and settles the merchant in full over PayPal.', examples: ['POST /a2a {"jsonrpc":"2.0","id":3,"method":"message/send","params":{"message":{"role":"user","parts":[{"kind":"text","text":"buy the headphones on credit, income 60000, EMIs 5000"}]}}}'] }
     ],
     provider: { organization: 'Gaurav Jain', url: 'https://github.com/jaingaurav1601/agentic-credit-checkout' }
   });
@@ -117,8 +117,7 @@ app.get('/api/state', (req, res) => {
 });
 
 // Agent conversation: user message -> agent decision (tool calls handled server-side)
-app.post('/api/agent', async (req, res) => {
-  const { message, history } = req.body || {};
+async function handleAgent(message, history) {
   const db = loadDb();
   const ctx = {
     products: PRODUCTS,
@@ -153,9 +152,41 @@ app.post('/api/agent', async (req, res) => {
       db.decisions.push({ ts: new Date().toISOString(), type: 'chat', message, rationale: out.rationale });
       saveDb(db);
     }
-    res.json({ reply: out.reply, action: out.action, payment, rationale: out.rationale });
+    return { reply: out.reply, action: out.action, payment, rationale: out.rationale };
+  } catch (e) {
+    throw new Error(String(e.message || e));
+  }
+}
+
+app.post('/api/agent', async (req, res) => {
+  const { message, history } = req.body || {};
+  try {
+    res.json(await handleAgent(message, history || []));
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// Real A2A (Agent2Agent) JSON-RPC endpoint: other agents can talk to this
+// merchant agent with the standard message/send method.
+app.post('/a2a', async (req, res) => {
+  const { jsonrpc, id, method, params } = req.body || {};
+  const rid = id ?? null;
+  if (jsonrpc !== '2.0') return res.json({ jsonrpc: '2.0', id: rid, error: { code: -32600, message: 'Invalid Request: jsonrpc must be "2.0"' } });
+  if (method !== 'message/send') return res.json({ jsonrpc: '2.0', id: rid, error: { code: -32601, message: 'Method not found. Supported: message/send' } });
+  const parts = params?.message?.parts || [];
+  const text = parts.filter(p => p.kind === 'text' || p.text).map(p => p.text || '').join('\n').trim();
+  if (!text) return res.json({ jsonrpc: '2.0', id: rid, error: { code: -32602, message: 'Invalid params: message.parts must include a text part' } });
+  try {
+    const out = await handleAgent(text, []);
+    const replyParts = [{ kind: 'text', text: out.reply }];
+    if (out.payment) replyParts.push({ kind: 'data', data: { action: out.action, payment: out.payment, rationale: out.rationale } });
+    res.json({
+      jsonrpc: '2.0', id: rid,
+      result: { kind: 'message', messageId: `m${Date.now()}`, role: 'agent', parts: replyParts },
+    });
+  } catch (e) {
+    res.json({ jsonrpc: '2.0', id: rid, error: { code: -32603, message: String(e.message || e) } });
   }
 });
 
