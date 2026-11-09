@@ -86,6 +86,29 @@ function underwrite({ amount, monthlyIncome, existingEmi }) {
 }
 
 // ---------- API ----------
+
+// A2A (Agent2Agent protocol) discovery: this store is a merchant agent.
+// Any compatible buyer agent can discover its checkout capability here.
+app.get('/.well-known/agent-card.json', (req, res) => {
+  const base = `${req.protocol}://${req.get('host')}`;
+  res.json({
+    name: 'Agentic Credit Checkout - Merchant Agent',
+    description: 'Merchant-side agent that lets buyer agents browse products, create PayPal orders (pay-now) and request conversational credit underwriting (pay-on-credit, 3 installments, merchant settled in full over PayPal rails).',
+    url: base,
+    version: '1.0.0',
+    protocolVersion: '0.3.0',
+    preferredTransport: 'JSONRPC',
+    capabilities: { streaming: false, pushNotifications: false },
+    defaultInputModes: ['text', 'application/json'],
+    defaultOutputModes: ['application/json'],
+    skills: [
+      { id: 'browse-catalog', name: 'Browse catalog', description: 'List products with prices.', examples: ['GET /api/products'] },
+      { id: 'checkout-pay-now', name: 'Pay-now checkout', description: 'Create and capture a PayPal order for the full amount via the conversational agent.', examples: ['POST /api/agent {"message": "buy the headphones, pay now"}'] },
+      { id: 'checkout-pay-on-credit', name: 'Pay-on-credit checkout', description: 'Agentic credit underwriting at checkout: the agent evaluates stated income and EMIs against an explicit credit policy, approves or declines with rationale, books a 3-month installment schedule, and settles the merchant in full over PayPal.', examples: ['POST /api/agent {"message": "buy the headphones on credit, income 60000, EMIs 5000"}'] }
+    ],
+    provider: { organization: 'Gaurav Jain', url: 'https://github.com/jaingaurav1601/agentic-credit-checkout' }
+  });
+});
 app.get('/api/products', (req, res) => res.json(PRODUCTS));
 
 app.get('/api/state', (req, res) => {

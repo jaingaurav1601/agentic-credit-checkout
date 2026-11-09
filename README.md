@@ -41,3 +41,11 @@ npm start
 ## License
 
 MIT
+
+## Agent-to-agent (A2A) discovery
+
+The store is also a merchant agent: any A2A-compatible buyer agent can discover its
+checkout capabilities at `/.well-known/agent-card.json` (catalog browse, pay-now
+checkout, and pay-on-credit checkout with agentic underwriting). This is what makes
+the demo true agentic commerce: the buyer side and the merchant side are both agents,
+settling over PayPal rails.
