@@ -71,6 +71,36 @@ fetch('/api/products').then(r => r.json()).then(ps => {
 });
 add('ria', "Hi, I'm Ria. What are you shopping for today? I can check you out over PayPal, or underwrite a small credit line so you can pay in 3 instalments while the merchant gets paid now.");
 
+// PayPal's redirect includes token only after the buyer approves. Capture remains explicit.
+const returned = new URLSearchParams(location.search);
+if (returned.get('paypal') === 'approved' && returned.get('token')) {
+  const orderId = returned.get('token');
+  const status = add('sys', 'PayPal approval received. Click Capture order to complete the purchase.');
+  const button = document.createElement('button');
+  button.className = 'ppbtn';
+  button.textContent = 'Capture order';
+  status.appendChild(document.createElement('br'));
+  status.appendChild(button);
+  button.onclick = async () => {
+    button.disabled = true;
+    try {
+      const response = await fetch('/api/capture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId }) });
+      const result = await response.json();
+      if (result.error || result.status !== 'COMPLETED') throw new Error(result.error || 'Payment not completed');
+      const message = add('ok', '');
+      message.textContent = `Payment captured (${result.captureId}). Order ${orderId} is COMPLETED. See the lender dashboard for the book.`;
+      button.textContent = 'Captured';
+      window.history.replaceState(null, '', location.pathname);
+    } catch (error) {
+      const message = add('bad', '');
+      message.textContent = 'Capture failed: ' + error.message;
+      button.disabled = false;
+    }
+  };
+} else if (returned.get('paypal') === 'cancelled') {
+  add('sys', 'PayPal checkout cancelled. No payment captured.');
+}
+
 async function send() {
   const inp = document.getElementById('in');
   const text = inp.value.trim();

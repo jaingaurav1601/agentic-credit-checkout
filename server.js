@@ -50,6 +50,10 @@ async function ppCreateOrder(amount, description) {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       intent: 'CAPTURE',
+      application_context: {
+        return_url: `${process.env.PUBLIC_BASE_URL || 'https://checkout.reincredit.xyz'}/?paypal=approved`,
+        cancel_url: `${process.env.PUBLIC_BASE_URL || 'https://checkout.reincredit.xyz'}/?paypal=cancelled`,
+      },
       purchase_units: [{ amount: { currency_code: 'USD', value: amount.toFixed(2) }, description }],
     }),
   });
@@ -91,7 +95,8 @@ function underwrite({ amount, monthlyIncome, existingEmi }) {
   const apr = 0; // demo: 0% if repaid in 3 monthly instalments
   const schedule = approved ? [0, 1, 2].map(i => ({
     due: new Date(Date.now() + (i + 1) * 30 * 864e5).toISOString().slice(0, 10),
-    amount: +(amount / 3).toFixed(2),
+    // Work in cents; the final payment absorbs the rounding remainder.
+    amount: (i === 2 ? Math.round(amount * 100) - 2 * Math.round(amount * 100 / 3) : Math.round(amount * 100 / 3)) / 100,
   })) : [];
   return { approved, reasons, apr, schedule, lineAvailable: available };
 }
