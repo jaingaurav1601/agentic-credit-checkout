@@ -144,7 +144,8 @@ async function handleAgent(message, history) {
       if (!product) throw new Error('unknown product');
       if (out.action === 'credit') {
         const uw = underwrite({ amount: product.price, monthlyIncome: +out.monthlyIncome || 0, existingEmi: +out.existingEmi || 0 });
-        db.decisions.push({ ts: new Date().toISOString(), type: 'underwrite', product: product.name, amount: product.price, income: out.monthlyIncome, emi: out.existingEmi, approved: uw.approved, reasons: uw.reasons, rationale: out.rationale });
+        // The logged rationale is the policy's own reasoning; the LLM's prior is kept separately for audit.
+        db.decisions.push({ ts: new Date().toISOString(), type: 'underwrite', product: product.name, amount: product.price, income: out.monthlyIncome, emi: out.existingEmi, approved: uw.approved, reasons: uw.reasons, rationale: `${uw.approved ? 'Approved' : 'Declined'} by policy: ${uw.reasons.join('; ')}`, llmRationale: out.rationale });
         if (uw.approved) {
           const order = await ppCreateOrder(product.price, `${product.name} (agentic credit)`);
           payment = { provider: 'paypal', orderId: order.id, approveUrl: (order.links || []).find(l => l.rel === 'approve')?.href, rail: 'credit', schedule: uw.schedule };
