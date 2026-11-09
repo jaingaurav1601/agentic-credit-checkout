@@ -90,7 +90,7 @@ function underwrite({ amount, monthlyIncome, existingEmi }) {
 // A2A (Agent2Agent protocol) discovery: this store is a merchant agent.
 // Any compatible buyer agent can discover its checkout capability here.
 app.get('/.well-known/agent-card.json', (req, res) => {
-  const base = `${req.protocol}://${req.get('host')}`;
+  const base = `https://${req.get('host')}`;
   res.json({
     name: 'Agentic Credit Checkout - Merchant Agent',
     description: 'Merchant-side agent that lets buyer agents browse products, create PayPal orders (pay-now) and request conversational credit underwriting (pay-on-credit, 3 installments, merchant settled in full over PayPal rails).',
