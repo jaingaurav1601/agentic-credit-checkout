@@ -92,7 +92,7 @@ async function send() {
       add('bad', 'Credit declined: ' + (j.payment.reasons || []).join('; '));
     } else {
       const rail = j.payment.rail === 'credit'
-        ? 'Agentic credit approved. 3 instalments scheduled. Complete the purchase over PayPal - the merchant is paid in full now:'
+        ? 'Agentic credit approved on policy. Complete the purchase over PayPal - the 3-instalment plan is booked on capture and the merchant is paid in full now:'
         : 'PayPal order created. Approve it to pay now:';
       const el = add('sys', rail + '<br>');
       const a = document.createElement('a');

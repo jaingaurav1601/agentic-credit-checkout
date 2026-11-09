@@ -17,9 +17,11 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 function loadDb() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify({ orders: [], receivables: [], decisions: [], creditLine: { limit: 500, used: 0 } }, null, 2));
+    fs.writeFileSync(DB_FILE, JSON.stringify({ orders: [], receivables: [], decisions: [], creditLine: { limit: 500, used: 0 }, pendingCredit: [] }, null, 2));
   }
-  return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+  const db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+  db.pendingCredit = db.pendingCredit || [];
+  return db;
 }
 function saveDb(db) { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
 
@@ -67,9 +69,18 @@ async function ppCapture(orderId) {
 }
 
 // ---------- Underwriting ----------
+// Credit approved in chat is only *reserved* until the buyer approves at PayPal
+// and the order is captured; it is booked (line drawn + receivable) at capture.
+const PENDING_TTL_MS = 3600e3; // buyer approval window for a reservation
+function pendingTotal(db) {
+  const now = Date.now();
+  return db.pendingCredit
+    .filter(p => now - new Date(p.ts).getTime() < PENDING_TTL_MS)
+    .reduce((s, p) => s + p.principal, 0);
+}
 function underwrite({ amount, monthlyIncome, existingEmi }) {
   const db = loadDb();
-  const available = db.creditLine.limit - db.creditLine.used;
+  const available = db.creditLine.limit - db.creditLine.used - pendingTotal(db);
   const dti = monthlyIncome > 0 ? (existingEmi / monthlyIncome) : 1;
   const reasons = [];
   let approved = true;
@@ -137,10 +148,13 @@ async function handleAgent(message, history) {
         if (uw.approved) {
           const order = await ppCreateOrder(product.price, `${product.name} (agentic credit)`);
           payment = { provider: 'paypal', orderId: order.id, approveUrl: (order.links || []).find(l => l.rel === 'approve')?.href, rail: 'credit', schedule: uw.schedule };
-          db.creditLine.used += product.price;
-          db.receivables.push({ id: `r${Date.now()}`, ts: new Date().toISOString(), product: product.name, principal: product.price, schedule: uw.schedule, status: 'open' });
+          // Reserve only; the line is drawn and the receivable booked at capture.
+          db.pendingCredit.push({ orderId: order.id, ts: new Date().toISOString(), product: product.name, principal: product.price, schedule: uw.schedule });
+          // The policy decision drives the user-facing reply, never the LLM's prior.
+          out.reply = `Approved on policy: $${product.price.toFixed(2)} for the ${product.name} in 3 monthly instalments of $${(product.price / 3).toFixed(2)} (0% APR), first due ${uw.schedule[0].due}. Approve the PayPal checkout to book it.`;
         } else {
           payment = { rail: 'credit', declined: true, reasons: uw.reasons };
+          out.reply = `I can't approve credit this time: ${uw.reasons.join('; ')}. You can still buy the ${product.name} now over PayPal.`;
         }
       } else {
         const order = await ppCreateOrder(product.price, product.name);
@@ -198,6 +212,15 @@ app.post('/api/capture', async (req, res) => {
     const db = loadDb();
     const cap = j.purchase_units?.[0]?.payments?.captures?.[0];
     db.orders.push({ id: j.id, ts: new Date().toISOString(), status: j.status, amount: cap?.amount?.value, currency: cap?.amount?.currency_code, captureId: cap?.id });
+    // Book agentic credit only now: buyer approved at PayPal and funds captured.
+    if (j.status === 'COMPLETED') {
+      const i = db.pendingCredit.findIndex(p => p.orderId === orderId);
+      if (i >= 0) {
+        const pc = db.pendingCredit.splice(i, 1)[0];
+        db.creditLine.used += pc.principal;
+        db.receivables.push({ id: `r${Date.now()}`, ts: new Date().toISOString(), product: pc.product, principal: pc.principal, schedule: pc.schedule, status: 'open', orderId });
+      }
+    }
     saveDb(db);
     res.json({ status: j.status, captureId: cap?.id });
   } catch (e) {
