@@ -2,6 +2,11 @@
 
 An AI agent that shops for you, decides whether to pay now or on **agentic credit**, and settles the payment over **PayPal**. Built for the PayPal AI Hackathon.
 
+## Live demo
+
+- https://checkout.reincredit.xyz
+- Fallback: https://agentic-credit-checkout.onrender.com
+
 ## What it does
 
 - A demo merchant store (3 products).
