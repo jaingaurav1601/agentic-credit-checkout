@@ -157,7 +157,7 @@ async function handleAgent(message, history) {
           // Reserve only; the line is drawn and the receivable booked at capture.
           db.pendingCredit.push({ orderId: order.id, ts: new Date().toISOString(), product: product.name, principal: product.price, schedule: uw.schedule });
           // The policy decision drives the user-facing reply, never the LLM's prior.
-          out.reply = `Approved on policy: $${product.price.toFixed(2)} for the ${product.name} in 3 monthly instalments of $${(product.price / 3).toFixed(2)} (0% APR), first due ${uw.schedule[0].due}. Approve the PayPal checkout to book it.`;
+          out.reply = `Approved on policy: $${product.price.toFixed(2)} for the ${product.name} in 3 monthly instalments: $${uw.schedule[0].amount.toFixed(2)}, $${uw.schedule[1].amount.toFixed(2)}, and $${uw.schedule[2].amount.toFixed(2)} (0% APR), first due ${uw.schedule[0].due}. Approve the PayPal checkout to book it.`;
         } else {
           payment = { rail: 'credit', declined: true, reasons: uw.reasons };
           out.reply = `I can't approve credit this time: ${uw.reasons.join('; ')}. You can still buy the ${product.name} now over PayPal.`;
